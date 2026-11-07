@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheduled job or one-off chat? — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='01-scheduled-job-or-oneoff-chat'>01 · Scheduled job or one-off chat?</h1>
+<p>Before you automate anything, spend two minutes deciding whether it deserves a schedule at all. This is the judgment call the whole book rests on, and it's honestly just three questions.</p>
+<h2 id='the-three-questions'>The three questions</h2>
+<p><strong>1. Would you run this again, on roughly the same clock?</strong></p>
+<p>If you'd prompt it today and prompt it again next Tuesday in mostly the same words — schedule it. If today's request is shaped around today's weird problem ("help me understand why my spreadsheet total is off"), keep it as a one-off chat.</p>
+<p><strong>2. Can the job be described once, in advance, as a fixed recipe?</strong></p>
+<p>A scheduled job has to survive with zero context from you. "Summarize everything I saved in <code>notes.md</code> over the last day" works because the inputs and the instruction are both knowable ahead of time. "Help me think through what I should do about David's email" isn't — it needs you in the loop.</p>
+<p><strong>3. Is a wrong answer cheap, or at least visible?</strong></p>
+<p>Every scheduled job will someday produce something confidently wrong. model misreads your notes, or the output is bland when you wanted sharp. If the output is a draft digest you'll skim for two minutes — fine, wrong-ish for a day costs nothing. If the output directly sends money, sends email on your behalf, or feeds medical decisions — don't schedule it raw. This book is education, never medical advice, and that goes double for anything that runs while you're asleep.</p>
+<h2 id='scoring-your-chores'>Scoring your chores</h2>
+<table><thead><tr><th>The chore</th><th>Schedule it?</th><th>Why</th></tr></thead><tbody><tr><td>Morning digest of your notes</td><td>Yes</td><td>Same time daily, fixed inputs, cheap if wrong</td></tr><tr><td>Weekly "what did I do this week" summary</td><td>Yes</td><td>Same clock weekly (Chapter 5)</td></tr><tr><td>Draft eBay listing description from item notes</td><td>Maybe</td><td>Repeatable shape, but you should eyeball before shipping — good <em>first draft</em> job</td></tr><tr><td>Reply to this specific customer email</td><td>No</td><td>One-off context</td></tr><tr><td>Batch-rename 400 files by reading a manifest</td><td>No, and also —</td><td>This is plain automation, not AI. That's a different handbook (batch files need careful logic, not fluent text). See everyday-batch-file-automation-handbook</td></tr><tr><td>"Check my blood-pressure readings and advise"</td><td><strong>Never, as advice</strong></td><td>Healthcare education is fine; medical advice from an unattended scheduled job is not</td></tr></tbody></table>
+<h2 id='the-spectrum-from-click-to-clock'>The spectrum, from click to clock</h2>
+<p>It's not two buckets, it's a dial:</p>
+<p>Already better. (automation-friend-guide calls this your prompt library.) my-notes.md`. The job exists; you just trigger it. Actions. You never trigger it again. watchdog so it can be left alone (Chapters 6–9).</p>
+<ol><li><strong>Click every time</strong> — daily one-off chat. Fine for genuinely creative work.</li><li><strong>Click, but from a saved prompt</strong> — a script you paste into chat by hand.</li><li><strong>One click, whole job</strong> — `scripts/ai_job.py --prompt "..." --input-file</li><li><strong>On the clock</strong> — the same script, plus Task Scheduler, cron, or GitHub</li><li><strong>On the clock, self-monitoring</strong> — plus logging, retries, and the</li></ol>
+<p>This handbook is steps 3–5. If you hover at step 1 for a chore that's actually step 2, you're paying a tax every single day.</p>
+<h2 id='when-not-to-schedule-gently'>When NOT to schedule (gently)</h2>
+<p>from the loop. If removing yourself makes the output useless, don't. itself with repetition. and rules — plain shell/batch is faster, deterministic, and AI creates more failure modes than value. Different book, as above. checking (you'll notice gibberish). Translations, extraction into a ledger, anything feeding money or health decisions — keep your hands on it.</p>
+<ul><li><strong>You'd want your judgment in the loop anyway.</strong> Scheduling removes you</li><li><strong>Nothing about it repeats.</strong> Setup cost, even a small one, only pays for</li><li><strong>It's really a batch-files job.</strong> If no reasoning is needed — just a loop</li><li>**The model needs to be <em>right</em>, not <em>helpful</em>.** Summaries are self-</li></ul>
+<h2 id='a-good-first-scheduled-job'>A good first scheduled job</h2>
+<p>Pick something where the failure mode is "bland summary, deleted tomorrow." The morning digest (Chapter 5) is the classic. Yours might be a weekly review of your todo file, or a Friday summary of your eBay activity file. Whatever it is, it should be: same input file, same instruction, same clock, and human-skimmed output.</p>
+<p>Chapter 2 gets it on the clock.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

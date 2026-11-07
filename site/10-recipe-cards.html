@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recipe cards — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='10-recipe-cards'>10 · Recipe cards</h1>
+<p>Copy, adjust the three uppercase things, done. Each recipe assumes this repo sits in its folder (<code>scheduled-ai-jobs/</code>) and that a small Ollama model (<code>llama3.2</code>) is pulled (<code>ollama pull llama3.2</code>).</p>
+<p><strong>Universal swap:</strong> before trusting <em>any</em> schedule, run the job once by hand with <code>--base-url</code> pointed at the mock server to confirm the plumbing (<code>python3 scripts/mock_ai_server.py</code> prints its <code>PORT=</code>), then flip to Ollama. Testing costs two minutes; a broken 7 AM job costs one morning.</p>
+<p>---</p>
+<h2 id='the-morning-digest'>The morning digest</h2>
+<p><strong>What you'll change:</strong> <code>MY-NOTES.md</code>, the times.</p>
+<p><strong>Where:</strong> every non-recipe file path is absolute on purpose.</p>
+<p><code>jobs/daily-digest.sh</code> (Linux/Mac). For Windows, write the same thing as a <code>.cmd</code> file — Chapter 2's <code>daily-digest.cmd</code> is the identical shape:</p>
+<pre><code data-lang="bash">#!/bin/bash
+cd "$HOME/scheduled-ai-jobs"
+/usr/bin/python3 scripts/morning_digest.py \
+  --base-url http://127.0.0.1:11434/v1 \
+  --model llama3.2 \
+  --notes-file "$HOME/scheduled-ai-jobs/MY-NOTES.md" \
+  --out-dir logs</code></pre>
+<p>The schedule (cron; Task Scheduler equivalent in Chapter 2):</p>
+<pre><code data-lang="cron">0 7 * * *  $HOME/scheduled-ai-jobs/jobs/daily-digest.sh</code></pre>
+<p>Read the result over coffee: <code>logs/morning-digest-YYYY-MM-DD.md</code>.</p>
+<p>---</p>
+<h2 id='the-weekly-review-this-week-vs-last'>The weekly review (this week vs last)</h2>
+<pre><code data-lang="bash">#!/bin/bash
+cd "$HOME/scheduled-ai-jobs"
+LASTWEEK=$(date -d '7 days ago' +%Y-%m-%d)     # macOS: date -v-7d +%Y-%m-%d
+LAST="$HOME/scheduled-ai-jobs/logs/morning-digest-$LASTWEEK.md"
+
+prompt="Using today's notes and last week's digest (attached), write a weekly review. Sections: Wins / Loose ends / Next week's movers / Something odd. Compare explicitly. Max 400 words."
+
+/usr/bin/python3 scripts/ai_job.py \
+  --prompt "$prompt" \
+  --input-file "$LAST" \
+  --out-dir logs --job-name weekly-review</code></pre>
+<pre><code data-lang="cron">30 8 * * 1  $HOME/scheduled-ai-jobs/jobs/weekly-review.sh</code></pre>
+<p>(Monday 8:30 — see Chapter 5 on Friday-getting-lost.)</p>
+<p>---</p>
+<h2 id='the-watchdog-runaway-alarm'>The watchdog (runaway alarm)</h2>
+<pre><code data-lang="cron">0 */6 * * *  /usr/bin/python3 $HOME/scheduled-ai-jobs/scripts/watchdog.py --job-dir $HOME/scheduled-ai-jobs/logs</code></pre>
+<p>Rings (exits 2) when: logs got oversized, a lock went stale, or a job failed in the last 24 h. How the ring reaches <em>you</em> — a wrapper script or desktop notification — is yours to wire; Chapter 7 has one pattern.</p>
+<p>---</p>
+<h2 id='the-firstdraft-listing-description-ebayreselling'>The first-draft listing description (eBay/reselling)</h2>
+<p>Input: a text file per item. Output: a listing draft you <em>always</em> skim before it ships —</p>
+<pre><code data-lang="bash">python3 scripts/ai_job.py \
+  --prompt "Write a friendly eBay auction description from these item notes: title, condition (be honest about flaws), measurements. End with a plain shipping/handling line. Max 200 words." \
+  --input-file "$HOME/ebay/ITEM-NOTES.md" \
+  --out-dir "$HOME/ebay/logs" --job-name listing-draft \
+  --force</code></pre>
+<p><code>--force</code> for manual runs only (it overrides a held lock) — scheduled, it should be omitted. See everyday-batch-file-automation-handbook for the many-items batch loop this pairs with in human-eye discipline.</p>
+<p>---</p>
+<h2 id='the-studynotes-checker-healthcare-study-aid-education-never-advice'>The study-notes checker (healthcare study aid — education, never advice)</h2>
+<p><strong>Not medical advice, ever.</strong> Education notes you authored <em>yourself</em>:</p>
+<pre><code data-lang="bash">python3 scripts/ai_job.py \
+  --prompt "From my study notes below, give: 1) three likely-section questions a quiz might ask, 2) one-paragraph plain-English explanations for each. Cite only my notes; say 'not in my notes' otherwise." \
+  --input-file "$HOME/study/UNIT-3-NOTES.md" \
+  --out-dir "$HOME/study/logs" --job-name study-checker</code></pre>
+<p>Grounding language is the safety bar: "cite only my notes" walls off invention. Your clinical decisions stay with clinicians.</p>
+<p>---</p>
+<h2 id='the-docstableofcontents-checker-github-actions'>The docs-table-of-contents checker (GitHub Actions)</h2>
+<p>From Chapter 4: a workflow that lists the numbered headings in <code>docs/</code> each Monday so a drifted TOC shows up in the Actions log. Chapter 4's changelog recipe is the fuller template — its "collect inputs / prompt / retries" spine always stays the same; only the collection step changes.</p>
+<pre><code data-lang="yaml">on:
+  schedule: [{cron: "0 14 * * 1"}]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  toc-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - &lt;&lt;'PY'
+          import re
+          from pathlib import Path
+          for p in sorted(Path("docs").glob("*.md")):
+              heads = re.findall(r"^#+ (.+)$", p.read_text(), re.M)
+              print(f"{p}: {len(heads)} headings")
+              for h in heads:
+                  if re.match(r"^#* ?\d", h):
+                      print(f"   chapter: {h}")
+          PY</code></pre>
+<p>---</p>
+<h2 id='the-retirement-plan-unscheduling'>The retirement plan (un-scheduling)</h2>
+<p>Time zones of the future may take shifts, or a job may retire. Where the kill switch lives, per chapter:</p>
+<table><thead><tr><th>Scheduler</th><th>Kill switch</th></tr></thead><tbody><tr><td>Task Scheduler</td><td><code>schtasks /Delete /tn "Name" /f</code> (or GUI, right-click → Delete)</td></tr><tr><td>cron</td><td><code>crontab -e</code> → delete the line</td></tr><tr><td>systemd timers</td><td><code>systemctl --user disable --now &lt;name&gt;.timer</code></td></tr><tr><td>GitHub Actions</td><td>Actions tab → workflow → ⋯ → Disable</td></tr></tbody></table>
+<p>Know these <em>before</em> you schedule anything. It's Chapter 8's whole point, restated from the exit-side: every good scheduled job has a kill switch you know where to find.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

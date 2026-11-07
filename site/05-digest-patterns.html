@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morning digest &amp; weekly summary patterns — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='05-morning-digest-weekly-summary-patterns'>05 · Morning digest &amp; weekly summary patterns</h1>
+<p>This chapter is about <strong>shape</strong>. Once a job runs on a clock (Chapter 2, 3, or 4), the difference between a digest you actually read and one you click past is the shape of what comes out. Get the shape right and you'll look forward to it; skip this chapter and you'll quietly stop opening the file by week three.</p>
+<h2 id='pattern-1-the-morning-digest'>Pattern 1: the morning digest</h2>
+<p><strong>One file, short, same sections every day.</strong> The ritual is the product, and these four habits are what make it stick:</p>
+<p>Ours: <em>Top priorities</em> / <em>Quick wins</em> / <em>Worth a look</em>. document; one that can't is a briefing. The prompt does the capping. for three tight sections, a lid on waffle. not a padded hallucination. Our script even skips the model call entirely and writes the placeholder itself — the "don't run on junk" rule from Chapter 8.</p>
+<ul><li><strong>Same sections every single morning.</strong> Predictability <em>is</em> the point.</li><li><strong>Hard caps per section</strong> ("max 3 bullets"). A digest that can grow is a</li><li><strong>A word ceiling on the whole thing</strong> (150 in our default). Enough room</li><li><strong>Say "nothing" politely.</strong> An empty-notes day gets one honest sentence,</li></ul>
+<p><code>scripts/morning_digest.py</code> has the exact prompts as plain text you can edit: the system prompt says <em>plain language, never invent facts, trivial notes deserve one sentence</em>; the user prompt fixes the section names, caps, and word ceiling. The shape is text, not code — change it to yours.</p>
+<p>Wire it up (Linux/Mac; Windows identical via Chapter 2):</p>
+<pre><code data-lang="cron">0 7 * * *  $HOME/scheduled-ai-jobs/jobs/daily-digest.sh</code></pre>
+<p>Output lands in <code>logs/morning-digest-2026-11-07.md</code>. Today's file, same place every morning, a log telling you what happened if it didn't.</p>
+<p><strong>An ADHD-friendly note</strong>, from the life-admin side of Asdale Dynamics: the value of a morning ritual is that it's already there when your brain won't architect one. Same file, same name, same three sections — the activation energy to read it drops to zero. That's why the shape is rigid on purpose.</p>
+<h2 id='pattern-2-the-weekly-summary'>Pattern 2: the weekly summary</h2>
+<p>The weekly summary follows opposite rules: it may be <strong>longer</strong>, should be</p>
+<p><strong>comparative</strong>, and earns one opinion.</p>
+<p>useful sentence a summary can produce — and it needs last week's file to exist. Digests are cheap; keep them. A folder of dated files is a free history. movers<em> / </em>Something odd*. genuinely helps. Daily summaries shouldn't editorialize (you can't tell one cloudy morning from another); weekly can see the fog week over week. result should greet the week, not vanish into the weekend.</p>
+<ul><li><strong>It references last week.</strong> "Same as last week, smaller" is the most</li><li><strong>Sections that age well.</strong> We like: <em>Wins</em> / <em>Loose ends</em> / *Next week's</li><li><strong>One opinion allowed.</strong> Weekly is where a short paragraph of judgment</li><li><strong>Clock it where you'd read it.</strong> Monday 8:30, not Friday 5:00 — the</li></ul>
+<p>A weekly prompt that works:</p>
+<pre><code data-lang="text">Using my notes below AND last week's summary (also below), write a weekly
+review with exactly these sections: Wins, Loose ends, Next week's movers,
+Something odd (a genuine anomaly — not an opinion wearing a costume).
+Explicitly compare against last week. Max 400 words.</code></pre>
+<p>Then hand it <code>logs/morning-digest-&lt;last-week&gt;.md</code> alongside this week's notes. The digest job archived it for a reason.</p>
+<h2 id='pattern-3-the-diff-digest-what-changed'>Pattern 3: the diff digest ("what changed")</h2>
+<p>Machine finds the changes, model phrasing-lubricates the wording. It's the split-responsibility pattern — detection mechanically, wording to the model — and it's the right way to summarize <em>changes</em> without asking a model to be reliable about noticing them:</p>
+<pre><code data-lang="bash">diff -u logs/todo-2026-11-06.md logs/todo-2026-11-07.md &gt; todo-changes.txt
+python3 scripts/ai_job.py \
+  --prompt "List each change from this diff in one plain sentence. No opinions." \
+  --input-file todo-changes.txt \
+  --out-dir logs --job-name todo-shift-digest</code></pre>
+<p>The machine found the changes; the model transliterated them. Every step owns the job it's good at.</p>
+<h2 id='pattern-4-a-themed-day-in-a-fixed-frame'>Pattern 4: a themed day, in a fixed frame</h2>
+<p>If same-sections-every-day feels too rigid, add one <strong>theme</strong> keyed by weekday — the frame stays fixed, a small decoration makes it feel alive:</p>
+<pre><code data-lang="bash">THEME=$(case $(date +%A) in
+  Monday) echo "Pick one thing I've been avoiding.";;
+  Friday) echo "Name three tiny wins.";;
+  *) echo "Standard top priorities.";;
+esac)</code></pre>
+<p>Feed <code>$THEME</code> into the digest prompt as one extra sentence. You can still predict the shape; the content gets freshness. Rigid frame, small decorations — that balance is the whole trick.</p>
+<h2 id='what-good-shape-means-in-this-one-paragraph'>What "good shape" means in this one paragraph</h2>
+<p>A scheduled digest is a <strong>reporter</strong>, not a co-writer: same sections in the same order, hard caps, permission to say "nothing today," and inputs it can't hallucinate around (the notes file <em>is</em> the material). If your digest prompt can be paraphrased as "say something interesting," it will produce a document you learn to skim — which is the failure mode this whole pattern exists to avoid.</p>
+<h2 id='verify-before-you-trust-the-schedule'>Verify before you trust the schedule</h2>
+<p>The morning-digest pattern above is implemented and tested in <code>scripts/morning_digest.py</code>, with three test cases in <code>tests/run_tests.py</code>: a normal digest, a polite skip on empty notes, and a skip on headings-only notes. Run <code>python3 tests/run_tests.py</code> — trust by verification, not by hope. Chapters 6, 7, and 8 take over from here on guardrails.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

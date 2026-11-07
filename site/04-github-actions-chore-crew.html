@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub Actions for repo chores — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='04-github-actions-for-small-repo-chores'>04 · GitHub Actions for small repo chores</h1>
+<p>Some AI chores don't belong to your computer — they belong to a <em>repo</em>. Drafting a weekly changelog, summarizing the last week of commits, tidying a docs index, reviewing a TODO file for stale items. GitHub Actions runs those on GitHub's clock, in the background, with your machine off.</p>
+<p>The catch, up front: on GitHub's own runners, your repo files go wherever the model runs — which is the cloud. If the chore touches private data, use the local-first variant at the bottom of this chapter instead.</p>
+<h2 id='recipe-hosted-runner-a-model-api'>Recipe: hosted runner + a model API</h2>
+<p>A hosted runner has no Ollama, so you need <strong>some</strong> OpenAI-compatible API and its key. Rules for that, in order of how much they matter:</p>
+<p>secret; never in the workflow file, never in a commit. monthly job is Chapter 8's nightmare, hosted. on someone else's servers.</p>
+<ol><li>Put the key in <strong>Settings → Secrets and variables → Actions</strong> as a</li><li>Set a monthly spend limit on the provider <em>before</em> scheduling. A runaway</li><li>Fine for public repo content. Not fine for private docs you'd never want</li></ol>
+<p><code>.github/workflows/weekly-changelog.yml</code>:</p>
+<pre><code data-lang="yaml">name: Weekly changelog draft
+on:
+  schedule:
+    - cron: "0 14 * * 1"   # Mondays 14:00 UTC — GitHub reads UTC only
+  workflow_dispatch:        # "Run workflow" button for testing by hand
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history; the changelog's raw material
+
+      - name: Collect the week's commits
+        run: git log --since="7 days ago" --oneline &gt; last-week.txt
+
+      - name: Ask the model for a draft changelog
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: https://api.openai-compatible-provider.example/v1
+          AI_MODEL: gpt-4o-mini
+        run: |
+          python3 - &lt;&lt;'PY'
+          import os, sys
+          sys.path.insert(0, ".")
+          from scripts.ai_job import call_chat
+
+          notes = open("last-week.txt").read()
+          reply = call_chat(
+              os.environ["AI_BASE_URL"],
+              os.environ["AI_MODEL"],
+              [
+                  {"role": "system",
+                   "content": "Write a weekly changelog in Markdown. Use only the supplied commits. Never invent features."},
+                  {"role": "user", "content": notes},
+              ],
+              timeout=120,
+              retries=3,
+          )
+          open("weekly-changelog-draft.md", "w").write(reply)
+          print(reply)
+          PY
+
+      - name: Save the draft as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-changelog-draft
+          path: weekly-changelog-draft.md</code></pre>
+<p>That reuses <code>scripts/ai_job.py</code>'s <code>call_chat()</code> — the same endpoint logic, retries, and timeout behavior you tested locally. One client, everywhere.</p>
+<h2 id='recipes-by-chore'>Recipes by chore</h2>
+<table><thead><tr><th>Chore</th><th>Reads</th><th>Writes</th><th>Cadence</th></tr></thead><tbody><tr><td>Weekly changelog draft</td><td><code>git log</code></td><td>artifact / PR</td><td>Mondays</td></tr><tr><td>Docs TOC check</td><td><code>docs/*.md</code></td><td>report artifact</td><td>Daily</td></tr><tr><td>TODO-file staleness review</td><td><code>TODO.md</code></td><td>suggested-edits PR</td><td>Weekly</td></tr><tr><td>Issue-triage <em>suggestions</em></td><td>open issues</td><td>comment draft</td><td>Daily</td></tr></tbody></table>
+<p>Names matter here too: <code>weekly-changelog.yml</code> reads better in a list than <code>workflows[0].yml</code>.</p>
+<h2 id='the-localfirst-recipe'>The local-first recipe</h2>
+<p>If the job should touch private data, don't send it to a hosted runner. Run a <strong>self-hosted runner</strong> on an always-on machine of yours:</p>
+<p>and follow the install commands GitHub shows. One download, one install, one service start.</p>
+<ol><li><strong>Settings → Actions → Runners → New self-hosted runner</strong> on the repo,</li><li>Point the job at your own Ollama and set <code>runs-on: self-hosted</code>.</li></ol>
+<pre><code data-lang="yaml">jobs:
+  digest:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 scripts/morning_digest.py \
+            --base-url http://127.0.0.1:11434/v1 \
+            --model llama3.2 \
+            --notes-file NOTES.md \
+            --out-dir logs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: morning-digest
+          path: logs/morning-digest*.md</code></pre>
+<p>One honest warning: a self-hosted runner executes your repo's code as a full-trust process on that machine. Only attach one to a repo you control, and don't do it to public repos where anyone can open PRs that run code.</p>
+<h2 id='the-quirks-to-know'>The quirks to know</h2>
+<p>PM in Bangalore. Convert once, write it as a comment, stop converting. branch is scheduled to do nothing. some minutes (occasionally longer when GitHub is busy). Fine for repo chores; wrong tool for anything that must run at a precise minute. Actions tab, read the log, and only then trust the schedule.</p>
+<ul><li><strong>UTC only.</strong> Actions read cron in UTC. 14:00 UTC is 9:00 AM Eastern, 7:30</li><li><strong>Schedules fire from the default branch only.</strong> A workflow file on a dev</li><li><strong>The clock is best-effort.</strong> On free plans, scheduled runs can slide by</li><li><strong><code>workflow_dispatch</code> is your debugger.</strong> Add it, run by hand from the</li></ul>
+<h2 id='guardrails-actionsflavored'>Guardrails, Actions-flavored</h2>
+<p>the workflow → ⋯ → Disable<strong>. Cheaper than debugging an error email months later. (</strong>Settings → Actions → retention days**), and very chatty jobs eat them. (e.g. via <code>peter-evans/create-pull-request</code>) instead of pushing to <code>main</code>, so the unattended job always has a human checkpoint.</p>
+<ul><li>Disable the schedule in a month it stops being loved: **Actions tab →</li><li>Keep runs lean; Actions stores logs and artifacts with retention limits</li><li>For anything writing back to the repo, let the job open a <em>pull request</em></li></ul>
+<h2 id='when-to-skip-actions-altogether'>When to skip Actions altogether</h2>
+<p>The job is about <em>your machine's</em> files, the model must be local anyway, or you're the only beings awake at that hour but not on the internet — then Chapter 2 (Task Scheduler) or Chapter 3 (cron) is simply the smaller tool. Actions earn their keep for repo chores because the repo already lives there; don't send local chores on a trip.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

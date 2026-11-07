@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local endpoints &amp; Ollama — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='09-local-endpoints-ollama'>09 · Local endpoints &amp; Ollama</h1>
+<p>Every script in this handbook talks to an <strong>OpenAI-compatible endpoint</strong>. If your picture of "endpoint" is "send my notes to a datacenter," this chapter is the plot twist: the whole dialect is just plain HTTP, and your own laptop speaks it. Notes in, digest out, <strong>nothing leaves the house</strong>, <strong>no API keys anywhere</strong>.</p>
+<h2 id='what-openaicompatible-actually-means'>What "OpenAI-compatible" actually means</h2>
+<p>OpenAI was first to publish a chat-completions API shape. So many tools adopted the shape that it became a dialect rather than a product. You POST JSON to <code>/v1/chat/completions</code> and get JSON back:</p>
+<pre><code data-lang="json">{
+  "model": "llama3.2",
+  "messages": [
+    {"role": "system", "content": "You write a short briefing."},
+    {"role": "user", "content": "Digest my notes."}
+  ],
+  "stream": false
+}</code></pre>
+<p>and the answer's text rides back in <code>choices[0].message.content</code>. That's the whole interface. The scripts here speak exactly this and nothing more — which is why they run against anything that speaks the dialect, with no client library.</p>
+<h2 id='the-twominute-ollama-setup'>The two-minute Ollama setup</h2>
+<p>local server on port 11434 and opens the dialect at <code>/v1/</code>.</p>
+<ol><li>Install <a href="https://ollama.com">Ollama</a> (Windows/macOS/Linux). It starts a</li><li>Pull a small model — for scheduled digests you want <em>fast</em>, not genius:</li></ol>
+<pre><code data-lang="bash">   ollama pull llama3.2     # ~2 GB, fits a modest laptop</code></pre>
+<ol><li>Check the endpoint yourself:</li></ol>
+<pre><code data-lang="bash">   curl http://127.0.0.1:11434/v1/models</code></pre>
+<p>You'll get a JSON list; the <code>id</code> field is the model name your job will use (e.g. <code>llama3.2:latest</code>).</p>
+<p>Now your job runner takes exactly one extra switch to become local-first:</p>
+<pre><code data-lang="bash">python3 scripts/ai_job.py \
+  --base-url http://127.0.0.1:11434/v1 \
+  --model llama3.2 \
+  --prompt "Digest my notes" \
+  --input-file my-notes.md \
+  --out-dir logs</code></pre>
+<p>Those defaults — Ollama on 11434 — are in <code>DEFAULT_BASE_URL</code> at the top of the scripts, so most of the time you never pass them at all.</p>
+<h2 id='same-trick-different-hosts'>Same trick, different hosts</h2>
+<table><thead><tr><th>Program</th><th>Base URL</th><th>Notes</th></tr></thead><tbody><tr><td>Ollama</td><td><code>http://127.0.0.1:11434/v1</code></td><td>easiest; starts at login</td></tr><tr><td>LM Studio</td><td><code>http://127.0.0.1:1234/v1</code></td><td>enable the server tab; check port</td></tr><tr><td>llama.cpp (<code>llama-server</code>)</td><td><code>http://127.0.0.1:8080/v1</code></td><td>start with <code>-a &lt;model-name&gt;</code></td></tr><tr><td>Anything else speaking the dialect</td><td><code>(your machine)/v1</code></td><td>same client code runs everywhere</td></tr></tbody></table>
+<p>Try one quick endpoint probe with any of them — hit <code>/v1/models</code> — and you know it's alive before you even schedule a job.</p>
+<h1 id='model-choice-in-one-paragraph'>Model choice, in one paragraph</h1>
+<p>Scheduled jobs reward <strong>small, fast, boring</strong>. A 2–3B model producing a 150-word digest each morning is the right tool: it finishes in seconds, never warms up in your way, and its failure modes (a bland bullet, not a wrong claim) are the cheap ones. Genius models are for chats you're watching; scheduled jobs are where "good enough, every day, forever" wins. Start at <code>llama3.2</code> or a similar small model; scale up only if a specific job's output genuinely needs it.</p>
+<h2 id='privacy-concretely'>Privacy, concretely</h2>
+<p>What "local endpoint" buys you, itemized:</p>
+<p>touch the internet. Verify any time: disconnect from Wi-Fi, run a digest, watch it still work. Nothing phones home; there's no account to leak. accidentally commit. content — the log file which <em>does</em> live in plaintext won't contain what your notes said. That's why logging (Chapter 6) and privacy agree here.</p>
+<ul><li><strong>Transit:</strong> the HTTP call stays on your machine (or LAN). It doesn't</li><li><strong>Storage:</strong> notes and digests live in your files (<code>out-dir</code>, <code>logs/</code>).</li><li><strong>Keys:</strong> the scripts accept none. There's no secret to store, rotate, or</li><li><strong>Logs:</strong> the job log records outcomes and char counts, never prompt</li></ul>
+<p>The one honest boundary: <strong>training / provider policy</strong> becomes not-applicable because there is no provider. The content that stays your machine's problem is only <em>your theft/exposure risk</em>, not a remote one — back up like any other private file.</p>
+<h2 id='keep-ollama-alive-for-the-7-oclock-job'>Keep Ollama alive for the 7 o'clock job</h2>
+<p>The scheduled job assumes the endpoint is up. The recipes in Chapters 2 and 3 cover that in depth, including:</p>
+<p>digest fires at 7:00 without you touching anything;</p>
+<ul><li>start Ollama at login (the simplest; the installer's default), so the</li><li>on Linux servers, install it as a systemd service so it starts at boot;</li><li>add a 5-second probe at the top of the job script:</li></ul>
+<pre><code data-lang="bash">curl -s --max-time 5 http://127.0.0.1:11434/v1/models \
+  || echo "OLLAMA DOWN at $(date -u)" &gt;&gt; logs/morning-digest.log</code></pre>
+<p>With that probe, a downed endpoint produces a <strong>readable</strong> failure in your log instead of a <em>mysterious</em> one ("HTTP error" at 7:00:41 does not tell you WHY, but <code>OLLAMA DOWN</code> does).</p>
+<h2 id='testing-without-a-model-at-all-the-mock'>Testing without a model at all: the mock</h2>
+<p>You don't even need a model installed to <em>test the scheduling plumbing</em>. <code>scripts/mock_ai_server.py</code> speaks the same dialect and always answers:</p>
+<pre><code data-lang="bash">python3 scripts/mock_ai_server.py &amp;          # prints PORT=&lt;something&gt;
+python3 scripts/ai_job.py \
+  --base-url http://127.0.0.1:&lt;port&gt;/v1 \
+  --prompt "hello" --out-dir /tmp/logs</code></pre>
+<p>It's fake but honest: replies are a canned "MOCK RESPONSE" naming how many characters your prompt reached it. That's enough to verify the whole schedule machinery — locking, logging, digest writing — without waiting on a model. <code>tests/run_tests.py</code> builds on it. Mock first, real model second.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start here — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='00-start-here'>00 · Start here</h1>
+<p>Welcome. You've been using AI for the chores. You ask it every morning to check something. You paste the same list every Monday and ask for the same summary. You keep meaning to automate it and never quite do.</p>
+<p>This handbook is the "do it" part. In plain English, step by step:</p>
+<p>Actions for repo chores (Chapter 4). (Chapter 5). forget about it (Chapters 6, 7, 8). stays home (Chapter 9).</p>
+<ol><li><strong>Decide</strong> what gets scheduled and what stays a one-off chat (Chapter 1).</li><li><strong>Schedule it</strong> on Windows (Chapter 2), Linux/Mac (Chapter 3), or GitHub</li><li><strong>Pick a shape</strong> for the output — a morning digest, a weekly summary</li><li><strong>Arm it</strong> with logs, retries, and watchdogs so it survives the week you</li><li><strong>Keep it local</strong> — run the model on your own machine so private data</li><li><strong>Steal recipes</strong> (Chapter 10) when you just want the thing.</li></ol>
+<h2 id='what-you-need'>What you need</h2>
+<p>to run the job — Chapter 2 shows how). the easiest: install it, <code>ollama pull llama3.2</code>, done. LM Studio and llama.cpp's server work identically. Chapter 9 explains why "OpenAI- compatible" doesn't mean "OpenAI" — it's a dialect, and everyone speaks it.</p>
+<ul><li>A computer you keep on at the relevant time (or one that sleeps and wakes</li><li>A local, OpenAI-compatible model endpoint. <a href="https://ollama.com">Ollama</a> is</li><li>Nothing else. No API keys, no accounts, no cloud.</li></ul>
+<h2 id='what-youll-build-here'>What you'll build here</h2>
+<p>The <code>scripts/</code> folder in this repo contains tested, ready-to-schedule jobs:</p>
+<table><thead><tr><th>Script</th><th>What it does</th></tr></thead><tbody><tr><td><code>scripts/ai_job.py</code></td><td>The general-purpose job runner: takes a prompt (plus an optional input file), runs it with logging, locking, retries, and size caps</td></tr><tr><td><code>scripts/morning_digest.py</code></td><td>The morning digest pattern from Chapter 5, ready to run</td></tr><tr><td><code>scripts/watchdog.py</code></td><td>The Chapter 9 watchdog: catches runaway logs, stale locks, and nightly failures</td></tr><tr><td><code>scripts/mock_ai_server.py</code></td><td>A pretend model endpoint, so you can test everything before trusting it</td></tr></tbody></table>
+<p>Test them any time, no model required:</p>
+<pre><code data-lang="bash">python3 tests/run_tests.py</code></pre>
+<p>Every job script works the same way at one level: prompt in, file out, log written, lock held while running. Once that pattern clicks, you can schedule anything.</p>
+<h2 id='the-one-rule-worth-tattooing-somewhere'>The one rule worth tattooing somewhere</h2>
+<p><strong>A scheduled job must be safe when two of it run at once, and safe when it runs during your vacation.</strong> Everything in this book — locks, logs, retries, caps, watchdogs — flows from that. A job that's only safe when you're watching isn't scheduled; it's checked in on. We'll make it scheduled.</p>
+<h2 id='how-to-read-this-book'>How to read this book</h2>
+<p>In order the first time. After that, chapters are self-contained, so skim the table of contents and jump to the one you need. Code blocks are meant to be copied. Nothing here assumes you're a programmer, and nothing here talks down to you.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

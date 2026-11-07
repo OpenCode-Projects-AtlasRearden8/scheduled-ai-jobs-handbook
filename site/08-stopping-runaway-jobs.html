@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stopping runaway jobs — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='08-stopping-runaway-jobs'>08 · Stopping runaway jobs</h1>
+<p>This is the chapter that keeps scheduled AI jobs a convenience instead of a cautionary tale. Runaway has four faces here:</p>
+<p>running, calling the model twice, writing over each other. disk notices. lock, so every later run skips and the job quietly stops producing anything. until "a digest" is 40 pages.</p>
+<ol><li><strong>The double-run</strong> — the 7:00 digest and the 7:05 <em>retried</em> digest both</li><li><strong>The runaway log</strong> — an error loop appending megabytes a day until your</li><li><strong>The long-running</strong> — a job that hangs forever and never releases its</li><li><strong>The model essayist</strong> — the endpoint answers, but replies keep growing</li></ol>
+<p>Four guards cover them, and this repo's scripts ship with each one.</p>
+<h2 id='guard-1-locks-no-stacking'>Guard 1: Locks — no stacking</h2>
+<p>A <strong>lock file</strong> is the saved game of a job. Before running, <code>ai_job.py</code> writes <code>logs/&lt;job-name&gt;.lock</code> containing its PID and start time. Another instance finding that file, <em>fresh</em>, skips instead of starting:</p>
+<pre><code data-lang="text">2026-11-07T07:00:32Z [SKIPPED] another run (pid 14221) is still active; skipping</code></pre>
+<p>Skipping is exit code 0 — a <strong>healthy outcome</strong>, not a hidden failure. The double-run is normal in messy lives (scheduler retried, you kicked it manually, two timezones changed on a laptop) and skipping is the correct, calm response.</p>
+<p>Why a file and not "task scheduler handles it"? Because locks survive the scheduler changing, the OS changing, the job moving — and because the scheduler only knows about <em>its</em> overlaps, not yours (manual rerun mid- flight). A lock file is a tiny promise between <em>every</em> copies of the job.</p>
+<h2 id='guard-2-stale-locks-dont-let-a-crash-make-the-job-miss-forever'>Guard 2: Stale locks — don't let a crash make the job miss forever</h2>
+<p>The failure mode hiding in guard 1: the job crashes hard (power flicker at 7:01), leaves a lock, and <em>every future run skips forever</em> — the job is now dead but unless you look you never know.</p>
+<p>So locks go stale on purpose: <code>ai_job.py</code> treats a lock older than 3 hours (<code>LOCK_STALE_SECONDS</code>) as abandoned, takes it over, and says so in the log:</p>
+<pre><code data-lang="text">2026-11-08T07:00:01Z [NOTE] took over a stale lock (previous run likely died)</code></pre>
+<p>Make sure your staleness window comfortably exceeds your job's normal runtime, including its possible timeout (<code>--timeout 120</code> each × retries means a slow model can legitimately run for ~10 minutes). 3 hours is a sane default, tune it for your job.</p>
+<p>For clean-up after edits/crashes mid-test? The watchdog does this on schedule too: <code>python3 scripts/watchdog.py --job-dir logs --clean-locks</code> sweeps anything older than your staleness window. Or as a one-off on its own machine:</p>
+<pre><code data-lang="bash">rm logs/ai-job.lock</code></pre>
+<h2 id='guard-3-log-rotation-caps-the-disk-never-fills'>Guard 3: Log rotation + caps — the disk never fills</h2>
+<p>Three caps ride along in the scripts, all adjustable:</p>
+<table><thead><tr><th>Guard</th><th>Default</th><th>Where</th></tr></thead><tbody><tr><td>Log rotation</td><td>5 MB → renamed to <code>&lt;job&gt;.log.&lt;timestamp&gt;</code></td><td><code>ai_job.py</code>, every run</td></tr><tr><td>Response cap</td><td>50,000 chars → truncated with a note</td><td><code>ai_job.py</code></td></tr><tr><td>Per-request timeout</td><td>120 s (via <code>--timeout</code>)</td><td>both scripts</td></tr></tbody></table>
+<p>The response cap is the essayist's. Models do wander — a digest weakly prompted grows and grows. A cap doesn't make it <em>good</em>; it makes it <em>bound- ed</em>: one page max, not forty. Cap generously (don't clip reasonable summaries) but <em>think</em> what your output means — one page, not one novel.</p>
+<h2 id='guard-4-the-watchdog-a-job-that-watches-the-jobs'>Guard 4: The watchdog — a job that watches the jobs</h2>
+<p><code>scripts/watchdog.py</code> is a scheduled job whose whole job is reading other jobs' logs. Around machine's quiet hours or daily before coffee:</p>
+<pre><code data-lang="bash">python3 scripts/watchdog.py --job-dir logs</code></pre>
+<p>It reports, in plain English, exactly three runaway-ish conditions:</p>
+<p>died mid-run<code> → suggest </code>--clean-locks<code>. → fires a </code>FAILED` grep in Chapter 7's diagnosis, not a duplicate alarm.</p>
+<ul><li><strong>Oversized logs</strong>: <code>chatty.log is 5.3 MB &gt; 5 MB</code> → suggest <code>--prune</code>.</li><li><strong>Stale locks</strong>: `ai-job.lock untouched for 27.0 hours — the job probably</li><li><strong>Recent failures</strong>: <code>ai-job.log shows 3 FAILED entries in the last 24h</code></li></ul>
+<p>Exit codes make it schedulable as <em>the</em> alarm:</p>
+<table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody><tr><td>0</td><td>all quiet</td></tr><tr><td>2</td><td>findings worth a look (detail printed)</td></tr><tr><td>3</td><td>nothing found at all (wrong directory?)</td></tr></tbody></table>
+<p>Daily watchdog + weekly human-glimpse = a feedback loop that catches anything the automation misses.</p>
+<h2 id='sizing-the-runaway-risk-by-endpoint'>Sizing the runaway risk by endpoint</h2>
+<p>Local endpoints are the reason runaway costs can't ruin a month. But risk doesn't <em>disappear</em> — it shifts:</p>
+<table><thead><tr><th>Endpoint</th><th>Runaway cost</th></tr></thead><tbody><tr><td>Local Ollama / LM Studio / llama.cpp</td><td>laptop fans spin; battery dips; some parallel runs slow the machine. Worst case: hours of it.</td></tr><tr><td>Hosted OpenAI-compatible API (Chapter 4's hosted recipe)</td><td><strong>Money, unbudgeted.</strong> Set provider spend caps before scheduling anything; check that it succeeded with a $0.01 test call.</td></tr></tbody></table>
+<p>If you're asking "does local-first matter?" — it's mostly <em>this chapter</em>. Locally, the worst a runaway digest does is heat your room slightly.</p>
+<h2 id='the-30second-runaway-audit'>The 30-second runaway audit</h2>
+<p>Checklist for any job you're about to schedule:</p>
+<p>above — your one job.)</p>
+<ol><li>Lock file? (<code>ai_job.py</code> — yes.)</li><li>Stale-lock policy? (3-hour takeover — yes.)</li><li>Log that can't tattoo itself to your disk? (5 MB rotation — yes.)</li><li>Reply cap? (<code>--max-response-chars</code> guards the essayist — yes.)</li><li>Per-request timeout? (<code>--timeout 120</code> — yes.)</li><li>A watchdog scheduled somewhere, at least weekly? (Chapter 9's command</li></ol>
+<p>Six yeses and the job is hardened against all four runaway faces — safe to schedule unattended. Run the audit once per job.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

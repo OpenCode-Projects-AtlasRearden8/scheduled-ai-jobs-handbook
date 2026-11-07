@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logging: knowing what actually happened — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='06-logging-knowing-what-actually-happened'>06 · Logging: knowing what actually happened</h1>
+<p>A scheduled job you can't inspect is a rumor. Logging is how the rumor becomes a record — and it matters far more for scheduled AI jobs than for ordinary ones, because the output is text nobody wanted to check <em>before</em> it mattered.</p>
+<p>The scripts in this repo all follow the same log discipline. Here's what it is and why.</p>
+<h2 id='the-onelineperrun-log'>The one-line-per-run log</h2>
+<p>Every job writes one line per event to <code>logs/&lt;job-name&gt;.log</code>:</p>
+<pre><code data-lang="text">2026-11-07T06:47:02Z [NOTE] lock acquired
+2026-11-07T06:47:02Z [START] job 'morning-digest' started from notes.md (1240 chars)
+2026-11-07T06:47:09Z [DONE] success; prompt 1513 chars, reply 708 chars -&gt; morning-digest-2026-11-07.md</code></pre>
+<p>Five habits make these lines worth having:</p>
+<p>ambiguity at 7:14 AM when the wall clock changed on Sunday. <code>SKIPPED</code>, <code>NOTE</code>. Grep-able by a human or by the watchdog (<code>grep "\[FAILED\]" logs/<em>.log</code> answers "is anything failing?" in a second). says </em>reply 708 chars*, not the reply itself. Two reasons: your notes may be private, and logs have poor security habits. Prompt and reply live in the dated output files; the log just points at them. dumps are Chapter 8's problem; one calm line per run is Chapter 6's. archaeology; you need the layers.</p>
+<ol><li><strong>UTC timestamp, ISO-shaped.</strong> <code>YYYY-MM-DDTHH:MM:SSZ</code>. One timezone, no</li><li><strong>A small status word in brackets</strong> — <code>START</code>, <code>DONE</code>, <code>OK</code>, <code>FAILED</code>,</li><li><strong>The log records outcomes and sizes, never contents.</strong> Notice the line</li><li><strong>One line, one event, no stack traces by default.</strong> Runaway-error</li><li><strong>Append-only.</strong> The next run never rewrites history. Debugging a job is</li></ol>
+<h2 id='what-to-log-for-an-ai-job-specifically'>What to log for an AI job, specifically</h2>
+<p>An AI job has two failure families, and the log should let you tell them apart at a glance:</p>
+<p>the <code>FAILED</code> line's message ("model call error: HTTP Error 500..."). They mean: <em>the job didn't run today</em> — retry or fix infra. catch quality (only a human reads it), but the char counts in <code>DONE</code> give one useful signal: a reply four times larger than usual is a model that decided to write an essay.</p>
+<ul><li><strong>Plumbing failures</strong> — endpoint down, timeout, HTTP 500. These live in</li><li><strong>Bad-output days</strong> — endpoint fine, reply bland or wrong. The log can't</li></ul>
+<h2 id='rotating-no-log-grows-forever'>Rotating: no log grows forever</h2>
+<p>Left alone, a log a misbehaving job spams is a runaway job wearing a hat. <code>ai_job.py</code> rotates a log past 5 MB into a timestamped side file before appending — plus the watchdog (Chapter 9) reports and prunes oversized logs on a schedule:</p>
+<pre><code data-lang="bash">python3 scripts/watchdog.py --job-dir logs           # report only
+python3 scripts/watchdog.py --job-dir logs --prune   # clean oversized</code></pre>
+<p>Log math worth knowing: a 100-line/month log will never rotate. A job writing 5 lines <em>per retry attempt</em> chews through 5 MB in a few weeks. Rotation isn't bureaucracy; it's the alarm bell itself.</p>
+<h2 id='from-crons-mouth-vs-the-jobs-mouth'>From cron's mouth vs the job's mouth</h2>
+<p>Two logs are better than one:</p>
+<p>happened inside. Written by the job itself.</p>
+<ul><li>The <strong>job log</strong> (<code>logs/&lt;job&gt;.log</code>) is the <em>content</em> — did it run, what</li><li>The <strong>scheduler log</strong> is the <em>heartbeat</em> — did the scheduler even fire it.</li></ul>
+<p>Chapter 3 shows the scheduler-side line:</p>
+<pre><code data-lang="cron">0 7 * * *  $HOME/scheduled-ai-jobs/jobs/daily-digest.sh &gt;&gt; $HOME/scheduled-ai-jobs/logs/cron.log 2&gt;&amp;1</code></pre>
+<p>The diagnosis flows naturally:</p>
+<table><thead><tr><th>Symptom</th><th>Suspect</th></tr></thead><tbody><tr><td>Nothing in cron.log, nothing in job log</td><td>The scheduler didn't fire the job at all</td></tr><tr><td>cron.log has output, job log doesn't</td><td>The job crashed before writing a log line (wrong path to python, etc.)</td></tr><tr><td>Job log shows START but no DONE</td><td>The job died mid-run (timeout, machine shut down)</td></tr><tr><td>Job log shows <code>[FAILED]</code> with HTTP errors</td><td>Endpoint/model trouble</td></tr><tr><td>Job log shows <code>[DONE]</code> but output looks wrong</td><td>A bad-output day (quality — your eyes)</td></tr></tbody></table>
+<p><code>START</code>-with-no-<code>DONE</code> is worth its own emphasis: it's the log entry for "a job was taken halfway" — exactly what a stale lock in Chapter 9 catches.</p>
+<h2 id='the-smoke-test'>The smoke test</h2>
+<p>Every scheduling chapter here ends the same way: run the job <em>by hand</em> once, and then run it from the scheduler once, then read the log. It's the non-negotiable onboarding step:</p>
+<p>run; expect exit code 0 and a fresh DONE line. <code>schtasks /Run</code>, or a temporary <code><em>/2 </em> <em> </em> *</code> cron line) then remove the temporary trigger.</p>
+<ol><li><code>python3 scripts/ai_job.py --prompt "say hello" --out-dir logs</code> — manual</li><li>Fire it from the scheduler with an imminent trigger (Chapter 2's</li><li>Read the log. If it says <code>[DONE]</code>, the schedule is honest.</li></ol>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

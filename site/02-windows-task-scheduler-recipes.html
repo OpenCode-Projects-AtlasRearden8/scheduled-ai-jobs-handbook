@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Windows Task Scheduler recipes — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='02-windows-task-scheduler-recipes'>02 · Windows Task Scheduler recipes</h1>
+<p>Task Scheduler is Windows' built-in alarm clock for programs — the same thing that runs Windows Update while you sleep. It's older-looking and a bit buried, but it never needs installing, and it can wake the computer up to do your job.</p>
+<h2 id='the-fiveminute-setup-by-hand'>The five-minute setup (by hand)</h2>
+<p>Say you want a morning digest at 7:00 AM daily, with Ollama running on your machine.</p>
+<p><strong>Step 1 — make a job script.</strong> A <code>.bat</code> file that runs one thing, so if the job changes you edit one file:</p>
+<pre><code data-lang="bat">:: jobs\daily-digest.cmd
+cd /d C:\scheduled-ai-jobs
+C:\Python313\python.exe scripts\morning_digest.py ^
+  --base-url http://127.0.0.1:11434/v1 ^
+  --model llama3.2 ^
+  --notes-file C:\scheduled-ai-jobs\my-notes.md ^
+  --out-dir logs</code></pre>
+<p><code>cd /d</code> matters: scheduled jobs start in a different folder than you'd expect, so absolute paths or an explicit <code>cd</code> save you a mystifying "file not found."</p>
+<p><strong>Step 2 — run it once by double-clicking.</strong> Manual test first. Watch the <code>logs\</code> folder for the digest file and the <code>.log</code> file. Only when this works do we schedule it — never automate something untested.</p>
+<p><strong>Step 3 — create the task.</strong></p>
+<p><code>C:\scheduled-ai-jobs\jobs\daily-digest.cmd</code></p>
+<ol><li>Press the Start button, type <strong>Task Scheduler</strong>, open it.</li><li>In the right panel: <strong>Create Basic Task...</strong></li><li><strong>Name</strong>: <code>Morning AI digest</code> — names you'll recognize in a list later.</li><li><strong>Trigger</strong>: Daily. Set the time you'd actually read it (7:00 AM).</li><li><strong>Action</strong>: Start a program. <strong>Program/script</strong>:</li><li><strong>Start in</strong>: <code>C:\scheduled-ai-jobs</code> (belt and suspenders with <code>cd /d</code>).</li><li>Finish. Find it in the <em>Task Scheduler Library</em> in the middle panel.</li></ol>
+<p><strong>Step 4 — the two checkboxes that matter.</strong> Double-click the task:</p>
+<p>Otherwise the job misses every morning you haven't logged in yet. PC sleeps at 7 AM. Untick "Start the task only if the computer is on AC power" on a desktop; keep it ticked on a laptop you don't want drained. version of our lock file (Chapter 9 explains why double-runs happen).</p>
+<ul><li><strong>General</strong> tab: set the job to <em>"Run whether user is logged on or not."</em></li><li><strong>Conditions</strong> tab: check <strong>"Wake the computer to run this task"</strong> if your</li><li><strong>Settings</strong> tab: <em>"Do not start a new instance"</em> — Task Scheduler's</li></ul>
+<p><strong>One Ollama-specific catch:</strong> Task Scheduler runs under <em>your</em> account, and Ollama has to be running for the job to reach it. The simplest reliable route: install Ollama so it starts with Windows (the installer's default), then it's there before 7 AM. Alternatively, add <code>ollama serve</code> as the first line of your <code>.cmd</code>, or make Ollama's startup its own scheduled task.</p>
+<h2 id='the-same-task-from-the-command-line'>The same task from the command line</h2>
+<p>For any templating/p2p replication, <code>schtasks</code> does what the GUI does:</p>
+<pre><code data-lang="bat">schtasks /Create /tn "Morning AI digest" ^
+  /tr "C:\scheduled-ai-jobs\jobs\daily-digest.cmd" ^
+  /sc daily /st 07:00 ^
+  /ru "%USERNAME%" /rl limited ^
+  /np</code></pre>
+<p>success, anything else is chapter 6's territory schedule anything, know how to cancel it</p>
+<ul><li><code>/sc daily /st 07:00</code> — daily at 7:00 AM</li><li><code>/np</code> — no password prompt (runs as the current user)</li><li><code>schtasks /Run /tn "Morning AI digest"</code> — fire it right now by hand</li><li><code>schtasks /Query /tn "Morning AI digest" /v</code> — last run result; <code>0x0</code> means</li><li><code>schtasks /Delete /tn "Morning AI digest" /f</code> — retirement plan before you</li></ul>
+<h2 id='the-onceaweek-task'>The once-a-week task</h2>
+<p>Same flow, trigger = Weekly. In <code>schtasks</code> form:</p>
+<pre><code data-lang="bat">schtasks /Create /tn "Weekly AI review" ^
+  /tr "C:\scheduled-ai-jobs\jobs\weekly-review.cmd" ^
+  /sc weekly /d MON /st 08:30 /np</code></pre>
+<h2 id='recipes-by-interval'>Recipes by interval</h2>
+<table><thead><tr><th>You want</th><th>Trigger type</th><th>In <code>schtasks</code></th></tr></thead><tbody><tr><td>Every morning</td><td>Daily</td><td><code>/sc daily /st 07:00</code></td></tr><tr><td>Monday mornings</td><td>Weekly</td><td><code>/sc weekly /d MON /st 08:00</code></td></tr><tr><td>First of the month</td><td>Monthly</td><td><code>/sc monthly /d 1 /st 09:00</code></td></tr><tr><td>Few hours apart on a workday</td><td>Multiple tasks</td><td>create a second task with another name/time (simplest)</td></tr><tr><td>Catch-up after missed run</td><td>Settings tab</td><td>"Run task as soon as possible after a scheduled start is missed"</td></tr></tbody></table>
+<h2 id='troubleshooting-in-order-of-likelihood'>Troubleshooting, in order of likelihood</h2>
+<p><code>cd /d</code> line in your <code>.cmd</code>, plus <strong>Start in</strong>, fixes most of these. (<code>C:\Python313\python.exe</code>), not <code>python</code>. Scheduler's PATH isn't yours. launches at startup (Chapter 9 covers endpoints in detail). "Do not start a new instance" setting. If a <code>.lock</code> file lingers in your <code>logs\</code> folder after a crash, run the watchdog (Chapter 9): <code>python scripts\watchdog.py --job-dir logs --clean-locks</code> for. Chapter 6, and your <code>.cmd</code> should look like:</p>
+<ol><li><strong>Last Run Result is <code>0x1</code> or <code>0x2</code>, file not found</strong> — wrong paths. The</li><li><strong>Python not found</strong> — use the full path</li><li><strong>Job runs but the model call fails</strong> — Ollama was asleep. Make sure it</li><li><strong>Job runs twice</strong> — you copied the task with two names, or missed the</li><li><strong>You can't tell what happened at all</strong> — that's what the logging is</li></ol>
+<pre><code data-lang="bat">cd /d C:\scheduled-ai-jobs
+C:\Python313\python.exe scripts\ai_job.py --prompt "say hello" ^
+  --out-dir logs --job-name smoke-test
+echo exit code: %errorlevel% &gt;&gt; logs\smoke-test.log</code></pre>
+<h2 id='laptop-note'>Laptop note</h2>
+<p>Laptops win the sleep battle. If "wake the computer" doesn't work for you, flip it around: run the digest at the moment <em>you arrive</em>, triggered by log-on instead of a fixed time (<code>/sc onlogon</code>, or Trigger → "At log on"). A digest at 7:41 when you sat down beats a perfect 7:00 that never ran.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

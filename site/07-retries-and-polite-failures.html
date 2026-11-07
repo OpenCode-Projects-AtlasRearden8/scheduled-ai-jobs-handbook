@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retries and polite failures — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='07-retries-and-polite-failures'>07 · Retries and polite failures</h1>
+<p>Networks hiccup. Ollama reboots. A model server takes forty seconds to load a big model and your job timed out at twenty. None of that means "give up on today's digest" — it means <em>try again, gently, then fail with dignity</em>.</p>
+<h2 id='the-retry-sandwich'>The retry sandwich</h2>
+<p>When <code>ai_job.py</code> calls a flaky endpoint, here's what actually happens:</p>
+<p>responses — sleep 2s, then 4s, then 8s (doubling, capped at 30s). error: ...` line, leave exit code 1.</p>
+<ol><li><strong>Try</strong> — one POST to <code>/chat/completions</code> with your timeout attached.</li><li><strong>If it fails</strong> — disconnects, timeouts, HTTP 500-class errors, empty</li><li><strong>After N attempts</strong> — give up, log one clear `FAILED ... model call</li></ol>
+<pre><code data-lang="bash">python3 scripts/ai_job.py \
+  --base-url http://127.0.0.1:11434/v1 \
+  --prompt "Digest today's notes" \
+  --input-file my-notes.md \
+  --retries 3 --timeout 120</code></pre>
+<p>Defaults: <code>--retries 3</code> attempts, <code>--timeout 120</code> seconds each. Backoff starts at 2 seconds.</p>
+<h2 id='which-errors-to-retry-and-which-not-to'>Which errors to retry (and which <em>not</em> to)</h2>
+<p>errors, empty/garbled responses. These are <em>maybe it just passed</em>. bad* — a bad model name, malformed request. Retrying a broken prompt six times is just a slower way to fail.</p>
+<ul><li><strong>Retry</strong>: connection refused/reset, timeouts, DNS blips, 500-class HTTP</li><li><strong>Don't retry</strong>: HTTP 4xx-class errors that mean *your request itself is</li></ul>
+<p><code>ai_job.py</code> currently retries everything failing above the application layer; given 4xx are commonly "bad model name," check the model name first in your <code>FAILED</code> line before assuming infrastructure. Quick check:</p>
+<pre><code data-lang="bash">curl http://127.0.0.1:11434/v1/models      # what does it actually have?</code></pre>
+<h2 id='timeouts-the-quarantine-for-slow-endpoints'>Timeouts: the quarantine for slow endpoints</h2>
+<p>The model didn't fail; the model is <em>loading</em>. Either way, at 7:05 you care less about why than when it stops. <code>--timeout</code> sets the per-request deadline: bigger models — the 70B-class local models — are slow. Having a timeout is why <em>hung</em> is a state your job exits from, not a state it lives in.</p>
+<table><thead><tr><th>Model class</th><th>Suggested <code>--timeout</code></th></tr></thead><tbody><tr><td>1–3B (llama3.2, phi3)</td><td>60s</td></tr><tr><td>7–8B</td><td>120s</td></tr><tr><td>13–14B</td><td>180–300s</td></tr><tr><td>70B-class on modest hardware</td><td>600s — or reconsider for real-time-ish jobs</td></tr></tbody></table>
+<h2 id='failing-politely-what-polite-means-for-a-scheduled-job'>Failing politely: what "polite" means for a scheduled job</h2>
+<p>How failure behaves determines whether a job earns trust or quietly gets deleted by someone tired of false alarms. Rules the scripts here follow:</p>
+<p>Your <code>.cmd</code>/<code>.sh</code> wrappers, scheduler conditions, and any mailers can branch on them. 500 after 3 attempts" is friendlier than a traceback — it's the <em>if you read one sentence, this one</em>. to digest` and exits 0. Too much alarm fatigue is how people ignore real failures. attempts live in memory, the log gets one failure record.</p>
+<ol><li><strong>Exit codes are promises.</strong> 0 healthy, 1 real failure, 2 bad input.</li><li><strong>The failure message names the layer.</strong> "model call error: HTTP Error</li><li><strong>Skip is not fail.</strong> An empty-notes digest week logs `[OK] ... nothing</li><li><strong>One line of truth.</strong> A failing retry doesn't spam the log; the</li></ol>
+<h2 id='retries-on-a-schedule-are-different-from-retries-in-a-session'>Retries on a schedule are different from retries in a session</h2>
+<p>In a chat, you retry by re-typing. On a clock, <em>the next run is the retry</em>, which changes the calculus:</p>
+<p>missing Tuesday is annoying; a <em>crashed</em> job that grinds forever is a bigger problem (Chapter 8). backoff is a <em>flaky-hiccup</em> catch; the daily rhythm itself is your deep retry. Big retries on tight schedules stack (the classic cron-job overlap), which Chapter 9's locks exist for.</p>
+<ul><li><strong>One job's failure is recoverable by the next tick.</strong> A daily digest</li><li><strong>That's why <code>--retries</code> stays modest.</strong> 3 attempts across ~30 seconds of</li></ul>
+<h2 id='the-alerting-question'>The alerting question</h2>
+<p>Polite failure quietly backstops one gap: <em>nobody's watching at 7 AM</em>. The generous rule is a building rule:</p>
+<p>(Chapter 9) runs on a schedule, summarizes fails from logs' recent window, and exits 2 so your wrapper script can say "email me" or "notification."</p>
+<ul><li><strong>First level:</strong> the humble log. Check it at your weekly review.</li><li><strong>Second level:</strong> make the failure <em>surface</em> once a week — the watchdog</li></ul>
+<p>A <code>notify-if-failed.cmd</code> pattern:</p>
+<pre><code data-lang="bat">cd /d C:\scheduled-ai-jobs
+C:\Python313\python.exe scripts\watchdog.py --job-dir logs --failure-window-hours 24
+if errorlevel 2 echo AI jobs had findings on %date% &gt;&gt; logs\alerter.log</code></pre>
+<p>(Who gets emailed is your infrastructure; until you wire a mailer, "you watching the logs" <em>is</em> the alert — which is fine if the watchdog runs on a schedule and its findings land somewhere you look weekly.)</p>
+<h2 id='the-one-test-that-matters'>The one test that matters</h2>
+<p><code>tests/run_tests.py</code> exercises both sides: a mock endpoint that fails the first 2 requests (<code>MOCK_FAIL_FIRST=2</code>) → the job succeeds on the 3rd try; a persistently failing one (<code>MOCK_FAIL=1</code>) → the job logs one FAILED line and exits 1. If you wrap <code>ai_job.py</code> with your own retry or alerting layer, write those two tests first. They're the whole contract.</p>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>

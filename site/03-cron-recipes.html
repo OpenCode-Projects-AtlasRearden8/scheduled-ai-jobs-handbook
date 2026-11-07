@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cron recipes (Linux &amp; Mac) — Scheduled AI Jobs Handbook</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>The Scheduled AI Jobs Handbook</h1>
+  <p>put AI chores on a schedule instead of clicking — by Asdale Dynamics, LLC</p>
+</header>
+<main>
+<nav class="chapter-nav"><ol class="toc"><li><a href="00-start-here.html">Start here</a></li><li><a href="01-scheduled-job-or-one-off-chat.html">Scheduled job or one-off chat?</a></li><li><a href="02-windows-task-scheduler-recipes.html">Windows Task Scheduler recipes</a></li><li><a href="03-cron-recipes.html">cron recipes (Linux &amp; Mac)</a></li><li><a href="04-github-actions-chore-crew.html">GitHub Actions for repo chores</a></li><li><a href="05-digest-patterns.html">Morning digest &amp; weekly summary patterns</a></li><li><a href="06-logging.html">Logging: knowing what actually happened</a></li><li><a href="07-retries-and-polite-failures.html">Retries and polite failures</a></li><li><a href="08-stopping-runaway-jobs.html">Stopping runaway jobs</a></li><li><a href="09-local-endpoints.html">Local endpoints &amp; Ollama</a></li><li><a href="10-recipe-cards.html">Recipe cards</a></li></ol></nav>
+<h1 id='03-cron-recipes-linux-mac'>03 · cron recipes (Linux &amp; Mac)</h1>
+<p>cron is the Unix alarm clock, and it's three things: <code>crontab -e</code> to edit your alarms, one line per alarm, and <code>man 5 crontab</code> when you confuse the min-hour field. This chapter is the middle one.</p>
+<h2 id='reading-a-cron-line'>Reading a cron line</h2>
+<pre><code data-lang="text">* * * * *  command to run
+│ │ │ │ │
+│ │ │ │ └── day of week (0–7, 0 and 7 = Sunday)
+│ │ │ └──── month (1–12)
+│ │ └────── day of month (1–31)
+│ └──────── hour (0–23)
+└────────── minute (0–59)</code></pre>
+<table><thead><tr><th>Line</th><th>Reads as</th></tr></thead><tbody><tr><td><code>0 7 <em> </em> *</code></td><td>every day at 07:00</td></tr><tr><td><code>0 7 <em> </em> 1</code></td><td>Mondays at 07:00</td></tr><tr><td><code>30 8 1 <em> </em></code></td><td>the 1st of the month at 08:30</td></tr><tr><td><code>0 <em>/4 </em> <em> </em></code></td><td>every 4 hours, on the hour</td></tr><tr><td><code>@reboot</code></td><td>once, when the machine boots (good place to start servers)</td></tr></tbody></table>
+<h2 id='setup-in-three-steps'>Setup, in three steps</h2>
+<p><strong>Step 1 — the job script.</strong> One file, absolute paths throughout:</p>
+<pre><code data-lang="bash">#!/bin/bash
+# jobs/daily-digest.sh
+cd "$HOME/scheduled-ai-jobs"
+/usr/bin/python3 scripts/morning_digest.py \
+  --base-url http://127.0.0.1:11434/v1 \
+  --model llama3.2 \
+  --notes-file "$HOME/scheduled-ai-jobs/my-notes.md" \
+  --out-dir logs</code></pre>
+<pre><code data-lang="bash">chmod +x jobs/daily-digest.sh   # make it executable, once</code></pre>
+<p><strong>Step 2 — test by hand.</strong> <code>./jobs/daily-digest.sh</code>, then read <code>logs/morning-digest.log</code>. cron runs in an almost-empty environment — your login's PATH, language settings, and aliases don't exist there. That's why the script uses absolute paths and doesn't trust <code>python</code> resolving correctly.</p>
+<p><strong>Step 3 — schedule it.</strong></p>
+<pre><code data-lang="bash">crontab -e</code></pre>
+<p>then add:</p>
+<pre><code data-lang="cron"># m  h  dom month dow   command
+  0  7  *   *     *    $HOME/scheduled-ai-jobs/jobs/daily-digest.sh</code></pre>
+<p>Done — daily 07:00 digest. <code>crontab -l</code> shows what's scheduled; <code>crontab -r</code> deletes it (the retirement plan — know it <em>before</em> you need it). <code>%</code> has special meaning in crontab (<code>new-line</code>); if a command needs a literal percent, escape it as <code>\%</code>.</p>
+<h2 id='where-output-goes'>Where output goes</h2>
+<p>Cron mails you stdout/stderr of your job. Modern systems don't run a mail daemon, so output silently vanishes. We covered you in another way: the scripts log to <code>logs/*.log</code> — that's your real output. To also keep errors:</p>
+<pre><code data-lang="cron">0 7 * * *  $HOME/scheduled-ai-jobs/jobs/daily-digest.sh &gt;&gt; $HOME/scheduled-ai-jobs/logs/cron.log 2&gt;&amp;1</code></pre>
+<h2 id='systemd-timers-the-modern-linux-option'>Systemd timers (the modern Linux option)</h2>
+<p>Systemd timers are what new Linux distros would rather you use: they have a proper log (<code>journalctl</code>), run catch-ups for missed runs, and are nameable.</p>
+<p><code>~/.config/systemd/user/daily-digest.service</code>:</p>
+<pre><code data-lang="ini">[Unit]
+Description=Morning AI digest
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/scheduled-ai-jobs
+ExecStart=/usr/bin/python3 scripts/morning_digest.py --out-dir logs</code></pre>
+<p><code>~/.config/systemd/user/daily-digest.timer</code>:</p>
+<pre><code data-lang="ini">[Unit]
+Description=Run the morning AI digest at 7am
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target</code></pre>
+<pre><code data-lang="bash">systemctl --user daemon-reload
+systemctl --user enable --now daily-digest.timer
+systemctl --user list-timers          # see when it fires next
+journalctl --user -u daily-digest     # read what happened</code></pre>
+<p><code>Persistent=true</code> = "run if the machine was asleep at the appointed time" — a laptop lifesaver. List before-and-afters: <code>list-timers</code>, <code>journalctl</code>.</p>
+<p>For macOS, cron still works exactly as shown; launchd is Apple's native alternative, but cron is friendlier for one-line jobs, so this chapter stays with cron.</p>
+<h2 id='ollama-on-the-clock'>Ollama, on the clock</h2>
+<p>cron won't start Ollama for you. Two reliable options:</p>
+<p>headless/server box, install the Ollama systemd service so it starts at boot; the installer's Linux instructions cover this and the unit is typically <code>ollama.service</code>.</p>
+<ol><li>Most installs start Ollama at login as a desktop app. On a</li><li>Belt and suspenders: a tiny test at the top of the job script:</li></ol>
+<pre><code data-lang="bash">curl -s --max-time 5 http://127.0.0.1:11434/v1/models &gt;/dev/null \
+  || systemctl --user start ollama \
+  || echo "OLLAMA DOWN" &gt;&gt; logs/morning-digest.log</code></pre>
+<p>(Should ollama be shipped as a systemd unit named <code>ollama.service</code>, adjust the name.)</p>
+<h2 id='recipes'>Recipes</h2>
+<pre><code data-lang="cron"># morning digest          — daily 7am
+0 7 * * *  $HOME/scheduled-ai-jobs/jobs/daily-digest.sh
+
+# weekly review           — Mondays 8:30am
+30 8 * * 1  $HOME/scheduled-ai-jobs/jobs/weekly-review.sh
+
+# monthly cleanup report  — the 1st, 9am
+0 9 1 * *  $HOME/scheduled-ai-jobs/jobs/monthly-report.sh
+
+# watchdog every 6 hours  — cheap insurance (chapter 9)
+0 */6 * * *  /usr/bin/python3 $HOME/scheduled-ai-jobs/scripts/watchdog.py --job-dir $HOME/scheduled-ai-jobs/logs</code></pre>
+<h2 id='troubleshooting-checklist'>Troubleshooting checklist</h2>
+<p><code>chmod +x</code> the script? Run it by hand first. use <code>--out-dir</code> with an absolute path). above. Linux <code>journalctl -u cron</code> or <code>grep CRON /var/log/syslog</code>; macOS <code>log show --predicate 'process == "cron"' --last 1h</code>.</p>
+<ol><li><strong><code>crontab -l</code> says your line is there but nothing runs</strong> — did you</li><li><strong>Runs by hand, empty environment</strong> — absolute paths.</li><li><strong>Writes files nowhere</strong> — <code>cd</code> into the project dir in the script (or</li><li><strong>Script runs, model call fails</strong> — endpoint down; see the curl probe</li><li><strong>Nothing in the log, nothing anywhere</strong> — check the system's cron log:</li></ol>
+</main>
+<footer>
+  &copy; 2026 Asdale Dynamics, LLC · MIT license ·
+  plain-English AI handbooks at
+  <a href="https://dylanasdale.github.io">dylanasdale.github.io</a>
+</footer>
+</body>
+</html>
